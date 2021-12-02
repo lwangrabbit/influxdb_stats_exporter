@@ -1,13 +1,13 @@
-FROM golang:1.12 AS builder
-WORKDIR /build/influxdb_stats_exporter/
-COPY . .
-RUN go mod tidy && \
-    make build
+FROM alpine:3.15.0
 
-FROM busybox:glibc
 EXPOSE 9424
-USER nobody
 
-COPY --from=builder /build/influxdb_stats_exporter/influxdb_stats_exporter /influxdb_stats_exporter
+WORKDIR ./
+
+COPY influxdb_stats_exporter /influxdb_stats_exporter
+RUN chmod +x /influxdb_stats_exporter
 
 ENTRYPOINT ["/influxdb_stats_exporter"]
+
+CMD ["--influx.url=http://localhost:8086", "--influx.user=", "--influx.password="]
+

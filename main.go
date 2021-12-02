@@ -1,27 +1,15 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
-	"strings"
-	"time"
 
-	influx "github.com/influxdata/influxdb1-client/v2"
-
-	_ "github.com/influxdata/influxdb1-client"
+	influx "github.com/influxdata/influxdb/client/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/version"
-	"github.com/serenize/snaker"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
-
-type collector struct {
-	client influx.Client
-	query  influx.Query
-}
 
 var (
 	queryDuration = prometheus.NewDesc(
@@ -51,6 +39,7 @@ var (
 func levelString(l logrus.Level) string {
 	return l.String()
 }
+
 func levelStrings(l []logrus.Level) []string {
 	ls := make([]string, len(l))
 	for i, level := range l {
@@ -124,61 +113,4 @@ func buildConfig() influx.HTTPConfig {
 
 	return config
 }
-func newCollector(config influx.HTTPConfig) collector {
-	logrus.Infof("Using InfluxDB at %v", *influxUrl)
-	client, err := influx.NewHTTPClient(config)
-	if err != nil {
-		logrus.WithError(err).Panic("Failed to set up influx client")
-	}
 
-	return collector{
-		client: client,
-		query:  influx.NewQuery("SHOW STATS", "", ""),
-	}
-}
-func (c collector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- prometheus.NewDesc("influxdb_exporter", "Bogus desc", []string{}, prometheus.Labels{})
-}
-func (c collector) Collect(ch chan<- prometheus.Metric) {
-	t := time.Now()
-	r, err := c.client.Query(c.query)
-	ch <- prometheus.MustNewConstMetric(queryDuration, prometheus.GaugeValue, time.Since(t).Seconds())
-
-	if err != nil {
-		logrus.WithError(err).Error("SHOW STATS query failed")
-		ch <- prometheus.MustNewConstMetric(querySuccess, prometheus.GaugeValue, 0)
-		return
-	} else if r.Error() != nil {
-		logrus.WithError(r.Error()).Error("SHOW STATS query failed")
-		ch <- prometheus.MustNewConstMetric(querySuccess, prometheus.GaugeValue, 0)
-		return
-	}
-	ch <- prometheus.MustNewConstMetric(querySuccess, prometheus.GaugeValue, 1)
-
-	for _, res := range r.Results {
-		for _, s := range res.Series {
-			for idx := 0; idx < len(s.Columns); idx++ {
-				seriesName := strings.ToLower(snaker.CamelToSnake(s.Name))
-				colName := strings.ToLower(snaker.CamelToSnake(s.Columns[idx]))
-				fqName := fmt.Sprintf("influxdb_%s_%s", seriesName, colName)
-
-				desc := prometheus.NewDesc(fqName, colName, []string{}, s.Tags)
-
-				asNum, ok := s.Values[0][idx].(json.Number)
-				if !ok {
-					logrus.
-						WithFields(logrus.Fields{"series": s.Name, "column": colName, "value": s.Values[0][idx]}).
-						Warn("Failed to convert value to number")
-				}
-				val, err := asNum.Float64()
-				if err != nil {
-					logrus.WithFields(logrus.Fields{"series": s.Name, "column": colName, "value": s.Values[0][idx]}).
-						Warn("Failed to convert value to float")
-				} else {
-					m := prometheus.MustNewConstMetric(desc, prometheus.UntypedValue, val)
-					ch <- m
-				}
-			}
-		}
-	}
-}

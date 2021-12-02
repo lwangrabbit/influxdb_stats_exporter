@@ -1,3 +1,5 @@
 influxdb_stats_exporter
 VERSION
 binaries/
+vendor/
+

@@ -17,7 +17,7 @@ all: build test
 
 build:
 	@echo ">> building"
-	@go build -ldflags "$(LDFLAGS)"
+	@CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)"
 
 crossbuild: $(GOPATH)/bin/gox
 	@echo ">> cross-building"
